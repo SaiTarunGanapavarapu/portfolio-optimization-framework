@@ -83,4 +83,60 @@ class Visualizer:
         plt.legend()
         plt.show()
 
+    @staticmethod
+    def plotComparison(evaluationResults, title="Strategy Comparison (Out-of-Sample)"):
+        """
+        Generates a bar chart comparing key metrics across different phases/strategies.
+        evaluationResults: A dict where keys are strategy names and values are portfolioValue series.
+        """
+        print(f"\n--- Plotting {title} ---")
+
+        riskFreeRate = 0.04
+        metricsRows = []
+
+        for strategyName, portfolioValues in evaluationResults.items():
+            dailyReturns = portfolioValues.pct_change().dropna()
+            annualizedReturn = (1 + dailyReturns.mean()) ** 252 - 1
+            annualizedVolatility = dailyReturns.std() * np.sqrt(252)
+
+            if annualizedVolatility == 0:
+                sharpeRatio = np.nan
+            else:
+                sharpeRatio = (annualizedReturn - riskFreeRate) / annualizedVolatility
+
+            runningPeak = portfolioValues.expanding(min_periods=1).max()
+            maxDrawdown = ((portfolioValues - runningPeak) / runningPeak).min()
+
+            metricsRows.append({
+                "Strategy": strategyName,
+                "Annualized Return (%)": annualizedReturn * 100,
+                "Annualized Volatility (%)": annualizedVolatility * 100,
+                "Max Drawdown (%)": maxDrawdown * 100,
+                "Sharpe Ratio": sharpeRatio
+            })
+
+        comparisonFrame = pd.DataFrame(metricsRows).set_index("Strategy").T
+
+        ax = comparisonFrame.plot(kind='bar', figsize=(12, 7), zorder=3)
+        plt.title(title, fontsize=15, fontweight='bold')
+        plt.ylabel("Value", fontsize=12)
+        plt.xticks(rotation=0)
+        plt.grid(axis='y', linestyle='--', alpha=0.7, zorder=0)
+        plt.legend(loc='best', frameon=True, shadow=True)
+
+        for bar in ax.patches:
+            yValue = bar.get_height()
+            if np.isfinite(yValue):
+                ax.annotate(
+                    f"{yValue:.2f}",
+                    (bar.get_x() + bar.get_width() / 2.0, yValue),
+                    ha='center',
+                    va='center',
+                    xytext=(0, 9),
+                    textcoords='offset points'
+                )
+
+        plt.tight_layout()
+        plt.show()
+
     
