@@ -99,6 +99,25 @@ class PortfolioEngine:
             print(f"{strategyName} evaluation failed or returned empty results.")
             return None
 
+    def runPhase0(self):
+        """
+        Strategy 0: Naive Equal-Weight Benchmark.
+        """
+        print("\n--- Phase 0: Equal-Weight Benchmark (Naive) ---")
+        _, testingData = self._splitData(self.splitDate)
+        
+        # 1/N weights
+        numAssets = len(self.tickers)
+        eqWeights = np.full(numAssets, 1.0 / numAssets)
+        
+        # Use your existing evaluation logic
+        portfolioValues = self._evaluateStrategy(
+            eqWeights, 
+            testingData, 
+            self.tickers, 
+            "Equal-Weight (Benchmark)"
+        )        
+
     def runPhase1(self):
         """
         Strategy 1: Markowitz Mean-Variance Optimization.
@@ -131,11 +150,15 @@ class PortfolioEngine:
             if portfolioValues is not None:
                 Visualizer.plotEvaluationResults(portfolioValues, title="Phase 1: Markowitz MV Evaluation (Out-of-Sample)")
 
+            # --- Visualization 3: Strategy Comparison ---
+            if portfolioValues is not None:
+                Visualizer.plotComparison(self.allEvaluationResults, title="Phase 1: Strategy Comparison (Out-of-Sample)")
 
     def runAnalysis(self):
         """
         Orchestrates phase 1 and visualizes the performance. 
         """
+        self.runPhase0()
         self.runPhase1()
 
 if __name__ == '__main__':
