@@ -15,6 +15,12 @@ The codebase is structured to separate optimization logic from data ingestion an
 
 ## Key Features
 
+### Phase 0
+
+- **Equal-Weight Benchmark**: Builds a naive baseline portfolio with 1/N allocation across selected assets.
+- **Out-of-Sample Evaluation**: Uses the same evaluator, rebalancing schedule, and transaction cost model as optimized strategies for fair comparison.
+- **Strategy Comparison Ready**: Stores benchmark results so they can be compared directly against Markowitz outputs.
+
 ### Phase 1
 
 - **Covariance Estimation**: Includes Ledoit-Wolf shrinkage (via scikit-learn) to improve conditioning of the covariance matrix for high-dimensional datasets.
@@ -66,7 +72,7 @@ portfolio = PortfolioEngine(
     transactionCostRate=0.001     # 0.1% costs
 )
 
-# 2. Run Analysis (Executes Phase 1)
+# 2. Run Analysis (Executes Phase 0 benchmark + Phase 1 optimization)
 portfolio.runAnalysis()
 ```
 
@@ -83,6 +89,7 @@ You can toggle advanced features directly in the constructor:
 
 ## Road Map
 
+- **Phase 0**: Equal-Weight Benchmark and Out-of-Sample Baseline (Completed)
 - **Phase 1**: Core Mean-Variance Optimization and Backtesting (Completed)
 - **Phase 2**: GARCH-based Volatility Forecasting and CVaR Optimization
 - **Phase 3**: Machine Learning Return Prediction (XGBoost/LSTM)
