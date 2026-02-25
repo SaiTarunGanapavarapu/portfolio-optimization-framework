@@ -18,8 +18,7 @@ The codebase is structured to separate optimization logic from data ingestion an
 ### Phase 0
 
 - **Equal-Weight Benchmark**: Builds a naive baseline portfolio with 1/N allocation across selected assets.
-- **Out-of-Sample Evaluation**: Uses the same evaluator, rebalancing schedule, and transaction cost model as optimized strategies for fair comparison.
-- **Strategy Comparison Ready**: Stores benchmark results so they can be compared directly against Markowitz outputs.
+- **Fair Comparison**: Uses the exact same evaluator, rebalancing schedule, and transaction cost model as the optimized strategies to isolate the true value of the mathematical optimization.
 
 ### Phase 1
 
@@ -89,7 +88,7 @@ You can toggle advanced features directly in the constructor:
 
 ## Road Map
 
-- **Phase 0**: Equal-Weight Benchmark and Out-of-Sample Baseline (Completed)
-- **Phase 1**: Core Mean-Variance Optimization and Backtesting (Completed)
-- **Phase 2**: GARCH-based Volatility Forecasting and CVaR Optimization
-- **Phase 3**: Machine Learning Return Prediction (XGBoost/LSTM)
+- [x] **Phase 0**: Equal-Weight Benchmark and Out-of-Sample Baseline
+- [x] **Phase 1**: Core Mean-Variance Optimization and Backtesting
+- [ ] **Phase 2**: GARCH-based Volatility Forecasting and CVaR Optimization
+- [ ] **Phase 3**: Machine Learning Return Prediction (XGBoost/LSTM)
