@@ -1,94 +1,79 @@
 # Portfolio Optimization Project
 
-A modular, multi-phase quantitative finance framework for portfolio construction and backtesting. This project implements classic Markowitz theory, advanced time-series risk forecasting, and machine learning-driven return prediction.
+A modular quantitative finance framework for portfolio construction and walk-forward backtesting, spanning classic Markowitz theory through advanced risk modeling.
 
-## Overview
+## Phases
 
-This repository implements a pipeline for:
+**Phase 0 — Equal-Weight Benchmark**  
+1/N allocation used as the baseline for all comparisons.
 
-1. **Data ingestion**: Fetching and cleaning adjusted close prices.
-2. **Estimation**: Calculating mean returns and covariance matrices (implementing **Ledoit-Wolf** shrinkage)
-3. **Optimization**: Solving for Mean-Variance Efficient portfolios with convex optimization .
-4. **Walk-forward evaluation**: Out-of-sample backtesting with configurable rebalancing schedules and transaction cost modeling.
+**Phase 1 — Markowitz MVO**  
+Ledoit-Wolf shrinkage + SLSQP max-Sharpe optimization with Tikhonov regularization. Tested walk-forward out-of-sample.
 
-The codebase is structured to separate optimization logic from data ingestion and evaluation, facilitating independent testing and modular expansion.
+**Phase 2 — Advanced Risk & Optimization** *(new)*
 
-## Key Features
-
-### Phase 0
-
-- **Equal-Weight Benchmark**: Builds a naive baseline portfolio with 1/N allocation across selected assets.
-- **Fair Comparison**: Uses the exact same evaluator, rebalancing schedule, and transaction cost model as the optimized strategies to isolate the true value of the mathematical optimization.
-
-### Phase 1
-
-- **Covariance Estimation**: Includes Ledoit-Wolf shrinkage (via scikit-learn) to improve conditioning of the covariance matrix for high-dimensional datasets.
-- **Convex Optimization**: Uses scipy.optimize (SLSQP) to maximize the Sharpe Ratio, subject to constraints (e.g., long-only, full investment).
-- **Regularization**: Applies Tikhonov regularization (**Σ+λI**) to ensure positive definiteness during optimization.
-- **Walk-Forward Evaluation**: Prevents look-ahead bias by testing weights on unseen data.
-  - **Rebalancing**: Supports Monthly, Quarterly, and Custom frequencies.
-  - **Transaction Costs**: Models slippage and commissions as a linear function of portfolio turnover.
+- **Robust covariance**: EWMA (exponentially weighted), denoised via Random Matrix Theory (Marchenko-Pastur), or regime-aware (auto-scales in stressed markets)
+- **Advanced optimizers**: Minimum CVaR (Rockafellar-Uryasev LP), Risk Parity (equal risk contribution), Maximum Diversification
+- **Richer transaction costs**: commission + half-spread + Almgren-Chriss market impact
+- **Full tearsheet**: Sortino, Calmar, Omega, CVaR at 95/99%, drawdown duration, CAPM decomposition
 
 ## Project Structure
 
 ```text
 src/
-├── dataLoader.py          # yfinance wrapper & data cleaning
-├── metrics.py             # Statistical moment estimation (Mean/Cov)
-├── markowitzOptimizer.py  # Convex optimization (Sharpe/MVO)
-├── evaluator.py           # Walk-forward out-of-sample backtester
-└── vizualization.py       # Efficient frontier & performance plots
-main.py                    # Main orchestrator (Configurable entry point)
-main.ipynb                 # Interactive research notebook
-requirements.txt           # Dependencies
+├── dataLoader.py           # yfinance wrapper
+├── metrics.py              # Mean returns & covariance estimation
+├── markowitzOptimizer.py   # Max-Sharpe SLSQP optimizer
+├── evaluator.py            # Walk-forward backtester (Phase 0–1)
+├── vizualization.py        # Efficient frontier & performance plots
+├── robustCovariance.py     # EWMA / denoised / regime-aware covariance
+├── advancedOptimizer.py    # CVaR / risk parity / max diversification
+├── transactionCosts.py     # Commission + spread + market impact model
+├── advancedMetrics.py      # Full tearsheet metrics
+└── advancedEvaluator.py    # Walk-forward backtester (Phase 2+)
+main.py                     # PortfolioEngine orchestrator
+main.ipynb                  # Interactive research notebook
+tests/                      # pytest test suite
+requirements.txt
 ```
 
 ## Quick Start
-
-### Installation
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Usage Example
-
-You can run the full pipeline directly via the central engine:
-
-```Python
+```python
 from main import PortfolioEngine
 
-# 1. Initialize the framework
 portfolio = PortfolioEngine(
     tickers=['NVDA', 'MSFT', 'AAPL', 'GOOGL', 'TSLA'],
     startDate='2015-01-01',
     endDate='2024-01-01',
-    splitDate='2023-01-01',
-    riskFreeRate = 0.04,  
-    meanMethod = 'arithmetic',
-    shrinkage = 'ledoit',
-    rebalancingPeriod='Q',        # Quarterly rebalancing
-    transactionCostRate=0.001     # 0.1% costs
+    splitDate='2020-01-01',
+    riskFreeRate=0.04,
+    meanMethod='arithmetic',
+    shrinkage='ledoit',
+    rebalancingPeriod='Q',
+    transactionCostRate=0.001,
+    initialCapital=100000,
+    # Phase 2
+    covarianceMethod='ewma',         # 'ewma' | 'denoised' | 'regimeAware'
+    optimizationMethod='minCvar',   # 'minCvar' | 'riskParity' | 'maxDiversification'
 )
 
-# 2. Run Analysis (Executes Phase 0 benchmark + Phase 1 optimization)
-portfolio.runAnalysis()
+portfolio.runAnalysis()   # runs Phase 0 → 1 → 2
 ```
 
-### Configuration Options
+## Quick Results Summary
 
-You can toggle advanced features directly in the constructor:
+The out-of-sample backtest demonstrates the practical tradeoffs of advanced portfolio optimization. While the traditional Markowitz Mean-Variance model achieved the highest annualized return (48.30%), it demonstrated classic "error maximization" by over-concentrating in high-beta tech assets, resulting in a fragile portfolio and a severe -50.78% maximum drawdown. Conversely, the minCVaR (EWMA) strategy successfully functioned as a tail-risk mitigator. By actively rotating out of volatile assets and into stable market anchors, it restricted the maximum drawdown to -32.55% and lowered annualized volatility to 24.97%, deliberately trading absolute upside for robust capital preservation during severe market shocks.
+![Phase2ResultsSummary](phase2Results.png)
 
-- **tickers**: List of ticker symbols (e.g., ```['AAPL', 'MSFT]```)
-- **riskFreeRate**: Annualized risk-free rate used for Sharpe Ratio calculation.
-- **meanMethod**: Method for expected return estimation.
-- **shrinkage**: Covariance shrinkage method. Use ```'ledoit'``` for automatic Ledoit-Wolf or a float ```0.5``` for fixed shrinkage.
-- **rebalancingPeriod**: Frequency of portfolio rebalancing. Options: ```'M'``` (monthly), ```'Q'``` (quarterly), ```'Y'``` (yearly), and ```'10Y'``` (buy and hold).
-- **transactionCostRate**: Proportional transaction cost (e.g., ```0.001``` = 10bps). Applied to total turnover.
+## Roadmap
 
-## Road Map
-
-- [x] **Phase 0**: Equal-Weight Benchmark and Out-of-Sample Baseline
-- [x] **Phase 1**: Core Mean-Variance Optimization and Backtesting
-- [ ] **Phase 2**: GARCH-based Volatility Forecasting and CVaR Optimization
-- [ ] **Phase 3**: Machine Learning Return Prediction (XGBoost/LSTM)
+- [x] Phase 0: Equal-weight benchmark
+- [x] Phase 1: Markowitz MVO + walk-forward backtesting
+- [x] Phase 2: Robust covariance + CVaR / risk parity / max diversification
+- [ ] Phase 3: GARCH volatility forecasting
+- [ ] Phase 4: ML return prediction (XGBoost + purged cross-validation)

@@ -18,14 +18,24 @@ from src.markowitzOptimizer import MarkowitzOptimizer
 from src.evaluator import OutOfSampleEvaluator
 from src.vizualization import Visualizer
 
+# Phase 2 imports
+from src.robustCovariance import RobustCovarianceEstimator
+from src.advancedOptimizer import AdvancedOptimizer
+from src.transactionCosts import TransactionCostModel
+from src.advancedEvaluator import AdvancedEvaluator
+from src.advancedMetrics import fullTearsheet
+
 
 class PortfolioEngine:
     """
     Orchestrator class to coordinate data, metrics, forecasting, optimization, and evaluation.
     """
-    def __init__(self, tickers, startDate, endDate, splitDate, riskFreeRate, 
-                 meanMethod, shrinkage, rebalancingPeriod, 
-                 transactionCostRate, initialCapital):
+    def __init__(self, tickers, startDate, endDate, splitDate, riskFreeRate,
+                 meanMethod, shrinkage, rebalancingPeriod,
+                 transactionCostRate, initialCapital,
+                 # Phase 2 options
+                 covarianceMethod='ewma', optimizationMethod='minCvar',
+                 maxWeight=1.0, minWeight=0.0, turnoverPenalty=0.0, cvarAlpha=0.05):
 
         self.tickers = tickers
         self.startDate = startDate
@@ -42,6 +52,13 @@ class PortfolioEngine:
         # Rebalancing and transaction cost options
         self.rebalancingPeriod = rebalancingPeriod  # 'M', 'Q', 'Y', '10Y'
         self.transactionCostRate = transactionCostRate  # as decimal
+        # Phase 2 options
+        self.covarianceMethod = covarianceMethod      # 'ewma', 'denoised', 'regimeAware'
+        self.optimizationMethod = optimizationMethod  # 'minCvar', 'riskParity', 'maxDiversification'
+        self.maxWeight = maxWeight
+        self.minWeight = minWeight
+        self.turnoverPenalty = turnoverPenalty
+        self.cvarAlpha = cvarAlpha
 
     def _splitData(self, splitDate = None):
         """
@@ -154,12 +171,101 @@ class PortfolioEngine:
             if portfolioValues is not None:
                 Visualizer.plotComparison(self.allEvaluationResults, title="Phase 1: Strategy Comparison (Out-of-Sample)")
 
+    def runPhase2(self):
+        """
+        Strategy 2: Advanced optimization using robust covariance + CVaR/risk-parity/max-diversification.
+        Runs a walk-forward backtest over the out-of-sample period.
+        """
+        print("\n--- Phase 2: Robust covariance + CVaR/risk-parity/max-diversification Optimization ---")
+
+        if self.data is None:
+            self.data = DataLoader.getData(self.tickers, self.startDate, self.endDate)
+        if self.data is None:
+            print("Error: could not load data for Phase 2.")
+            return
+
+        # Only use the test period for the walk-forward
+        testData = self.data.loc[self.data.index >= self.splitDate]
+        if testData.empty:
+            print("Error: no out-of-sample data after splitDate.")
+            return
+
+        # Build Phase 2 components
+        covEstimator = RobustCovarianceEstimator(method=self.covarianceMethod)
+        optimizer = AdvancedOptimizer(
+            method=self.optimizationMethod,
+            riskFreeRate=self.riskFreeRate,
+            maxWeight=self.maxWeight,
+            minWeight=self.minWeight,
+            turnoverPenalty=self.turnoverPenalty,
+            cvarAlpha=self.cvarAlpha,
+        )
+        costModel = TransactionCostModel(
+            commissionRate=self.transactionCostRate,
+            spreadCost=self.transactionCostRate / 2,
+        )
+        evaluator = AdvancedEvaluator(
+            prices=self.data,
+            optimizer=optimizer,
+            covEstimator=covEstimator,
+            costModel=costModel,
+            rebalancingPeriod=self.rebalancingPeriod,
+            trainWindow=252,
+            riskFreeRate=self.riskFreeRate,
+            initialCapital=self.initialCapital,
+        )
+
+        results = evaluator.runWalkForward(
+            startDate=str(testData.index[0].date()),
+            endDate=str(testData.index[-1].date()),
+        )
+
+        portfolioValues = results['portfolioValues']
+        metrics = results['metrics']
+        strategyName = f"Phase 2: {self.optimizationMethod} ({self.covarianceMethod})"
+        self.allEvaluationResults[strategyName] = portfolioValues
+
+        # Print the full portfolio weights chosen in second phase
+        # Print final Phase 2 portfolio weights (last rebalance)
+        weightsHistory = results.get('weightsHistory')
+        if weightsHistory is not None and not weightsHistory.empty:
+            latestDate = weightsHistory.index[-1]
+            latestWeights = weightsHistory.iloc[-1]
+
+            print(f"\nOptimal Phase 2 Weights (Last Rebalance: {latestDate.date()}):")
+            for ticker, weight in latestWeights.items():
+                print(f"  {ticker}: {weight:.2%}")
+            print(f"Verification: Total Weights Sum = {latestWeights.sum():.4f}")
+        else:
+            print("\nNo Phase 2 rebalance weights available.")
+
+
+        print(f"\n--- {strategyName} Out-of-Sample Report ---")
+        print(f"Total Return:          {metrics.get('totalReturn', float('nan')) * 100:.2f}%")
+        print(f"CAGR:                  {metrics.get('cagr', float('nan')) * 100:.2f}%")
+        print(f"Annualized Volatility: {metrics.get('volatility', float('nan')) * 100:.2f}%")
+        print(f"Sharpe Ratio:          {metrics.get('sharpe', float('nan')):.2f}")
+        print(f"Sortino Ratio:         {metrics.get('sortino', float('nan')):.2f}")
+        print(f"Calmar Ratio:          {metrics.get('calmar', float('nan')):.2f}")
+        print(f"Max Drawdown:          {metrics.get('maxDrawdown', float('nan')) * 100:.2f}%")
+        print(f"CVaR 95%:              {metrics.get('cvar95', float('nan')) * 100:.2f}%")
+
+        regimeHistory = results['regimeHistory']
+        if regimeHistory is not None and not regimeHistory.empty:
+            stressedPct = (regimeHistory == 'stressed').mean() * 100
+            print(f"Stressed regime:       {stressedPct:.1f}% of rebalance dates")
+
+        # Visualization
+        Visualizer.plotEvaluationResults(portfolioValues, title=f"Phase 2: {strategyName} (Out-of-Sample)")
+        Visualizer.plotComparison(self.allEvaluationResults, title="Phase 2: Strategy Comparison (Out-of-Sample)")
+
     def runAnalysis(self):
         """
-        Orchestrates phase 1 and visualizes the performance. 
+        Orchestrates all implemented phases and visualizes the performance.
         """
         self.runPhase0()
         self.runPhase1()
+        self.runPhase2()
 
 if __name__ == '__main__':
 
@@ -175,7 +281,13 @@ if __name__ == '__main__':
         shrinkage = 'ledoit',
         rebalancingPeriod = 'Y',      # 'M' = monthly, 'Q' = quarterly, 'Y' = yearly
         transactionCostRate = 0.001,  # 0.1% transaction cost (as decimal)
-
+        # Phase 2 options
+        covarianceMethod = 'ewma',  # 'ewma', 'denoised', 'regimeAware'
+        optimizationMethod = 'minCvar',     # 'minCvar', 'riskParity', 'maxDiversification'
+        maxWeight = 0.3,                    # Max weight per asset (30%)    
+        minWeight = 0.0,                    # Min weight per asset (0%)
+        turnoverPenalty = 0.001,             # 0.1% turnover penalty (as decimal)
+        cvarAlpha = 0.05                    # CVaR confidence level (5%)
     )
 
     portfolio.runAnalysis()
